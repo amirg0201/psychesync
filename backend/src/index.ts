@@ -1,0 +1,68 @@
+import { Hono } from 'hono';
+import { logger } from 'hono/logger';
+import { cors } from 'hono/cors';
+import * as dotenv from 'dotenv';
+import { connectDB } from './config/db';
+
+// Importación de Rutas
+import authRoutes from './routes/authRoutes';
+
+// Importación de Middlewares de Seguridad
+import { verifyJWT, isAdmin } from './middlewares/authMiddleware';
+
+// 1. Configuración de entorno
+dotenv.config();
+
+// 2. Conexión a la Base de Datos (MongoDB Local)
+connectDB();
+
+const app = new Hono();
+
+// 3. Middlewares Globales
+app.use('*', logger()); // Registro de peticiones en consola
+app.use('*', cors({
+  origin: 'http://localhost:5173', // Puerto por defecto de SvelteKit
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 600,
+  credentials: true,
+}));
+
+// 4. Rutas Públicas (Sin autenticación)
+app.get('/health', (c) => {
+  return c.json({
+    status: 'online',
+    service: 'PsycheSync Backend',
+    database: 'connected',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Montamos las rutas de autenticación (Register/Login)
+app.route('/api/auth', authRoutes);
+
+// 5. Rutas Protegidas (Solo Psicólogos/Admin)
+// Estas rutas requieren el Header: Authorization: Bearer <TOKEN>
+app.get('/api/admin/check', verifyJWT, isAdmin, (c) => {
+  const payload = c.get('jwtPayload');
+  return c.json({
+    message: 'Token válido y permisos de Administrador confirmados.',
+    user: payload
+  });
+});
+
+// 6. Manejo de Errores Global (Clean Code)
+app.onError((err, c) => {
+  console.error(`[SERVER ERROR]: ${err.message}`);
+  return c.json({
+    error: 'Error interno del servidor',
+    message: err.message
+  }, 500);
+});
+
+// 7. Inicio del servidor
+export default {
+  port: Number(process.env.PORT) || 3000,
+  fetch: app.fetch,
+};
