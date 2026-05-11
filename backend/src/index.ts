@@ -23,7 +23,7 @@ const app = new Hono();
 // 3. Middlewares Globales
 app.use('*', logger()); // Registro de peticiones en consola
 app.use('*', cors({
-  origin: 'http://localhost:5173', // Puerto por defecto de SvelteKit
+  origin: ['http://localhost:5173', 'https://psychesync.vercel.app'], // Permite local y producción
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   exposeHeaders: ['Content-Length'],
