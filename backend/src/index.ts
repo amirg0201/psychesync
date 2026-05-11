@@ -61,8 +61,13 @@ app.onError((err, c) => {
   }, 500);
 });
 
+import { serve } from '@hono/node-server';
+
 // 7. Inicio del servidor
-export default {
-  port: Number(process.env.PORT) || 3000,
+const port = Number(process.env.PORT) || 3000;
+console.log(`🚀 Servidor iniciando en http://localhost:${port}`);
+
+serve({
   fetch: app.fetch,
-};
+  port
+});
