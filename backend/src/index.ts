@@ -6,6 +6,8 @@ import { connectDB } from './config/db';
 
 // Importación de Rutas
 import authRoutes from './routes/authRoutes';
+import patientRoutes from './routes/patientRoutes';
+import appointmentRoutes from './routes/appointmentRoutes';
 
 // Importación de Middlewares de Seguridad
 import { verifyJWT, isAdmin } from './middlewares/authMiddleware';
@@ -22,7 +24,7 @@ const app = new Hono();
 app.use('*', logger()); // Registro de peticiones en consola
 app.use('*', cors({
   origin: 'http://localhost:5173', // Puerto por defecto de SvelteKit
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,
@@ -41,6 +43,8 @@ app.get('/health', (c) => {
 
 // Montamos las rutas de autenticación (Register/Login)
 app.route('/api/auth', authRoutes);
+app.route('/api/patients', patientRoutes);
+app.route('/api/appointments', appointmentRoutes);
 
 // 5. Rutas Protegidas (Solo Psicólogos/Admin)
 // Estas rutas requieren el Header: Authorization: Bearer <TOKEN>

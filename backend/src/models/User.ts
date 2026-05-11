@@ -10,6 +10,7 @@ const UserSchema = new Schema({
     enum: ['ADMIN', 'PATIENT'],
     default: 'PATIENT'
   },
+  document: { type: String, unique: true, sparse: true },
   // Para el psicólogo: acumuladores de rendimiento
   stats: {
     totalPoints: { type: Number, default: 0 },

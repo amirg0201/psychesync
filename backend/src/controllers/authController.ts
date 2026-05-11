@@ -4,14 +4,24 @@ import { User } from '../models/User';
 import bcrypt from 'bcryptjs';
 
 export const register = async (c: Context) => {
-  const body = await c.req.json();
-  try {
-    const newUser = await User.create(body);
-    return c.json({ message: 'Usuario creado', id: newUser._id }, 201);
-  } catch (error) {
-    return c.json({ error: 'Error al registrar usuario' }, 400);
+  const { name, email, password, role, document } = await c.req.json();
+
+  // 🛡️ VALIDACIÓN DE SEGURIDAD CORE (BACK-END)
+  if (role === 'PATIENT' && document) {
+    const documentRegex = /^[0-9]{10}$/; // Ejemplo: 10 dígitos exactos
+    if (!documentRegex.test(document)) {
+      return c.json({ error: "Seguridad: El formato de cédula es inválido." }, 400);
+    }
   }
+
+  // Verificar si el documento ya existe
+  const existingDoc = await User.findOne({ document });
+  if (existingDoc) return c.json({ error: "Esta cédula ya está registrada." }, 400);
+
+  const newUser = await User.create({ name, email, password, role, document });
+  return c.json({ message: "Usuario creado", id: newUser._id }, 201);
 };
+
 
 export const login = async (c: Context) => {
   const { email, password } = await c.req.json();
