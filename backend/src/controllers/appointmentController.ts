@@ -1,6 +1,7 @@
 import { Context } from 'hono';
 import { Appointment } from '../models/Appointment';
 import { User } from '../models/User';
+import { Patient } from '../models/Patient';
 import { isValidObjectId } from 'mongoose';
 
 export const appointmentController = {
@@ -13,18 +14,11 @@ export const appointmentController = {
       const { patientId, date, priority, expectedIntensity } = body;
       const psychologist = c.get('jwtPayload') as { id: string };
 
-      // Validar que el paciente existe, es un PACIENTE y tiene su documento registrado
-      const patient = await User.findOne({ _id: patientId, role: 'PATIENT' });
+      // Validar que el paciente existe y pertenece al Psicólogo logueado
+      const patient = await Patient.findOne({ _id: patientId, psychologistId: psychologist.id });
 
       if (!patient) {
-        return c.json({ error: "El paciente seleccionado no existe." }, 404);
-      }
-
-      // Opcional: Verificación extra de integridad
-      if (!patient.document) {
-        return c.json({
-          error: "No se puede agendar: El paciente no tiene un documento de identidad registrado en su perfil."
-        }, 400);
+        return c.json({ error: "El paciente seleccionado no existe o no pertenece a su perfil profesional." }, 404);
       }
 
       const newAppointment = await Appointment.create({
@@ -80,6 +74,14 @@ export const appointmentController = {
 
       const needsBuffer = realIntensity >= 8;
       await appointment.save();
+
+      // Actualizar acumuladores del psicólogo en la base de datos
+      await User.findByIdAndUpdate(appointment.psychologistId, {
+        $inc: {
+          'stats.totalPoints': finalScore,
+          'stats.sessionsCompleted': 1
+        }
+      });
 
       return c.json({
         message: "Cita finalizada",

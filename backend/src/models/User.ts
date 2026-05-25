@@ -5,13 +5,7 @@ const UserSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true, select: false }, // 'select: false' por seguridad
-  role: {
-    type: String,
-    enum: ['ADMIN', 'PATIENT'],
-    default: 'PATIENT'
-  },
-  document: { type: String, unique: true, sparse: true },
-  // Para el psicólogo: acumuladores de rendimiento
+  // Acumuladores de rendimiento del psicólogo
   stats: {
     totalPoints: { type: Number, default: 0 },
     sessionsCompleted: { type: Number, default: 0 }
