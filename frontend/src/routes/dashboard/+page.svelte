@@ -107,7 +107,8 @@
   );
 
   const burnoutState = $derived.by(() => {
-    if (resolvedAppointments.length === 0) {
+    // 1. Si no hay ninguna cita finalizada en el historial, mostramos "Sin Datos"
+    if (appointments.filter(app => app.status === 'resolved').length === 0) {
       return {
         label: 'Sin Datos',
         colorClass: 'text-slate-400 bg-slate-900/40 border-slate-800/80 shadow-slate-950/20',
@@ -117,10 +118,39 @@
       };
     }
 
+    // 2. 📊 NUEVA LÓGICA DE VOLUMEN: Contamos cuántas consultas se han finalizado HOY
+    const todayStr = new Date().toISOString().split('T')[0];
+    const resolvedTodayCount = appointments.filter(app => 
+      app.date.startsWith(todayStr) && app.status === 'resolved'
+    ).length;
+
+    // 3. Lógica de Intensidad acumulada (Mantiene tus métricas anteriores)
     const criticalCount = resolvedAppointments.filter(app => (app.realIntensity ?? 0) >= 8).length;
     const totalIntensity = resolvedAppointments.reduce((sum, app) => sum + (app.realIntensity ?? 0), 0);
-    const avgIntensity = totalIntensity / resolvedAppointments.length;
+    const avgIntensity = resolvedAppointments.length > 0 ? totalIntensity / resolvedAppointments.length : 0;
 
+    // 🔥 DISPARADOR 1: CONTROL DE VOLUMEN DE JORNADA (Límite Máximo = 8 horas/citas)
+    if (resolvedTodayCount >= 8) {
+      return {
+        label: 'Riesgo Crítico',
+        colorClass: 'text-rose-400 bg-rose-950/40 border-rose-500/30 shadow-rose-950/40 shadow-lg glow-rose',
+        textClass: 'text-rose-400 font-extrabold',
+        dotClass: 'bg-rose-500 animate-ping',
+        desc: `⚠️ Límite de jornada alcanzado (${resolvedTodayCount} sesiones hoy). Fatiga por volumen de trabajo detectada. Agenda cerrada.`
+      };
+    } 
+    
+    if (resolvedTodayCount >= 6) {
+      return {
+        label: 'Carga Elevada',
+        colorClass: 'text-amber-400 bg-amber-950/40 border-amber-500/30 shadow-amber-950/40',
+        textClass: 'text-amber-400 font-bold',
+        dotClass: 'bg-amber-500 animate-pulse',
+        desc: `Jornada laboral avanzada (${resolvedTodayCount}/8 sesiones hoy). Se sugiere espaciar o detener nuevas consultas.`
+      };
+    }
+
+    // 🧠 DISPARADOR 2: CONTROL DE INTENSIDAD COGNITIVA (Casos Graves)
     if (criticalCount >= 2) {
       return {
         label: 'Riesgo Crítico',
