@@ -202,6 +202,12 @@
     }
   });
 
+  // Helper para evitar optional chaining en {@const} (incompatible con rolldown en build)
+  function getPatientTrend(patientId: string | undefined): PatientTrend | null {
+    if (!patientId) return null;
+    return trendCache[patientId] ?? null;
+  }
+
   async function handleLogout() {
     auth.set({ token: null, user: null });
     await goto('/login');
@@ -379,22 +385,20 @@
 
                   <!-- COLUMNA TENDENCIA DEL PACIENTE -->
                   <td class="px-6 py-4">
-                    {@const pid = app.patientId?._id ?? ''}
-                    {@const trend = trendCache[pid]}
-                    {#if !trend || trend.direction === 'insufficient_data'}
-                      <span class="text-slate-600 text-xs font-bold">—</span>
-                    {:else if trend.direction === 'improving'}
+                    {#if getPatientTrend(app.patientId?._id)?.direction === 'improving'}
                       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                         ▼ Mejora
                       </span>
-                    {:else if trend.direction === 'worsening'}
+                    {:else if getPatientTrend(app.patientId?._id)?.direction === 'worsening'}
                       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20">
                         ▲ Deterioro
                       </span>
-                    {:else}
+                    {:else if getPatientTrend(app.patientId?._id)?.direction === 'stable'}
                       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
                         ● Estable
                       </span>
+                    {:else}
+                      <span class="text-slate-600 text-xs font-bold">—</span>
                     {/if}
                   </td>
 
