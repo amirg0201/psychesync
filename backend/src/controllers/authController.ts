@@ -55,7 +55,7 @@ export const login = async (c: Context) => {
 
 export const getPsychologists = async (c: Context) => {
   try {
-    const users = await User.find({}, 'name email stats');
+    const users = await User.find({}, 'name email');
 
     const list = await Promise.all(users.map(async (user) => {
       const todayStr = new Date().toISOString().split('T')[0];
@@ -89,12 +89,9 @@ export const getPsychologists = async (c: Context) => {
           burnoutLabel = 'Nivel Óptimo 🟢';
         }
       }
-
       return {
-        _id: user._id,
         name: user.name,
         email: user.email,
-        stats: user.stats,
         burnoutState: burnoutLabel
       };
     }));
