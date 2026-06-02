@@ -63,19 +63,19 @@ export const appointmentController = {
       const appointment = await Appointment.findById(id);
       if (!appointment) return c.json({ error: "Cita no encontrada" }, 404);
 
-      // Algoritmo de Productividad
-      const baseScore = appointment.priority;
+      // ── Algoritmo de Productividad ──────────────────────────────────────────
+      const baseScore      = appointment.priority;
       const intensityDelta = realIntensity - appointment.expectedIntensity;
-      const finalScore = baseScore - intensityDelta;
+      const finalScore     = baseScore - intensityDelta;
 
-      appointment.realIntensity = realIntensity;
+      appointment.realIntensity    = realIntensity;
       appointment.performanceScore = finalScore;
-      appointment.status = 'resolved';
+      appointment.status           = 'resolved';
 
       const needsBuffer = realIntensity >= 8;
       await appointment.save();
 
-      // Actualizar acumuladores del psicólogo en la base de datos
+      // ── Actualizar acumuladores del psicólogo ───────────────────────────────
       await User.findByIdAndUpdate(appointment.psychologistId, {
         $inc: {
           'stats.totalPoints': finalScore,
@@ -83,11 +83,64 @@ export const appointmentController = {
         }
       });
 
+      // ── Análisis de Tendencia del Paciente (cross-query Appointment) ────────
+      // Trae las últimas 5 sesiones RESUELTAS del mismo paciente (excluye la actual)
+      const lastSessions = await Appointment.find({
+        patientId: appointment.patientId,
+        status: 'resolved',
+        _id: { $ne: appointment._id }
+      })
+        .sort({ date: -1 })
+        .limit(5)
+        .select('realIntensity date');
+
+      type TrendDirection = 'improving' | 'worsening' | 'stable' | 'insufficient_data';
+
+      interface PatientTrend {
+        direction: TrendDirection;
+        delta: number | null;
+        sessionsAnalyzed: number;
+        clinicalAlert: string | null;
+      }
+
+      let patientTrend: PatientTrend = {
+        direction: 'insufficient_data',
+        delta: null,
+        sessionsAnalyzed: lastSessions.length,
+        clinicalAlert: null
+      };
+
+      if (lastSessions.length >= 2) {
+        // Más reciente → índice 0, más antigua → último índice
+        const mostRecent = lastSessions[0].realIntensity as number;
+        const oldest     = lastSessions[lastSessions.length - 1].realIntensity as number;
+        const delta      = mostRecent - oldest; // positivo = empeora, negativo = mejora
+
+        let direction: TrendDirection;
+        if      (delta <= -2) direction = 'improving';
+        else if (delta >= 2)  direction = 'worsening';
+        else                  direction = 'stable';
+
+        // Alerta clínica si hay deterioro significativo (delta ≥ 3 puntos)
+        const clinicalAlert = delta >= 3
+          ? `⚠️ El paciente muestra deterioro significativo: intensidad subió ${delta} puntos en las últimas ${lastSessions.length} sesiones.`
+          : null;
+
+        patientTrend = {
+          direction,
+          delta,
+          sessionsAnalyzed: lastSessions.length,
+          clinicalAlert
+        };
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       return c.json({
         message: "Cita finalizada",
         scoreObtained: finalScore,
         smartBufferActive: needsBuffer,
-        alert: needsBuffer ? "⚠️ Sesión intensa detectada." : "Ok"
+        alert: needsBuffer ? "⚠️ Sesión intensa detectada." : "Ok",
+        patientTrend
       });
     } catch (error: any) {
       return c.json({ error: "Error al resolver la cita" }, 500);
