@@ -4,6 +4,15 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
 
+  type TrendDirection = 'improving' | 'worsening' | 'stable' | 'insufficient_data';
+
+  type PatientTrend = {
+    direction: TrendDirection;
+    delta: number | null;
+    sessionsAnalyzed: number;
+    clinicalAlert: string | null;
+  };
+
   type Appointment = {
     _id: string;
     date: string;
@@ -13,6 +22,7 @@
     realIntensity?: number;
     performanceScore?: number;
     patientId?: {
+      _id: string;
       name: string;
       email: string;
       document: string;
@@ -26,6 +36,10 @@
   let realIntensity = $state(5);
   let showModal = $state(false);
   let lastResult = $state<any>(null);
+  let showTrendResult = $state(false);
+
+  // Cache de tendencias por patientId (se actualiza al resolver)
+  let trendCache = $state<Record<string, PatientTrend>>({});
 
   // Estados de notificación customizada (reemplaza alert)
   let showNotification = $state(false);
@@ -75,13 +89,23 @@
       });
       lastResult = result;
       showModal = false;
-      
-      // Recargar la lista
+      showTrendResult = true;
+
+      // Recargar la lista y cachear tendencia del paciente
       await loadData();
-      
-      // Alertar de Smart Buffer de forma integrada en la UI
-      if (result.smartBufferActive) {
-        triggerNotification('warning', result.alert || "⚠️ Carga crítica detectada. Programando descanso obligatorio de 15 minutos.");
+
+      // Guardar la tendencia en cache usando el patientId de la cita resuelta
+      const resolvedApp = appointments.find(a => a._id === selectedAppId);
+      const pid = resolvedApp?.patientId?._id;
+      if (pid && result.patientTrend) {
+        trendCache = { ...trendCache, [pid]: result.patientTrend };
+      }
+
+      // Toast: alerta clínica de deterioro del paciente (prioridad máxima)
+      if (result.patientTrend?.clinicalAlert) {
+        triggerNotification('warning', result.patientTrend.clinicalAlert);
+      } else if (result.smartBufferActive) {
+        triggerNotification('warning', result.alert || "⚠️ Carga crítica detectada.");
       } else {
         triggerNotification('success', "Sesión completada y puntuada con éxito.");
       }
@@ -313,6 +337,7 @@
                 <th class="px-6 py-4">Fecha / Hora</th>
                 <th class="px-6 py-4">Prioridad</th>
                 <th class="px-6 py-4">Estado</th>
+                <th class="px-6 py-4">Tendencia</th>
                 <th class="px-6 py-4 text-right">Cierre de Consulta</th>
               </tr>
             </thead>
@@ -351,6 +376,28 @@
                       </span>
                     {/if}
                   </td>
+
+                  <!-- COLUMNA TENDENCIA DEL PACIENTE -->
+                  <td class="px-6 py-4">
+                    {@const pid = app.patientId?._id ?? ''}
+                    {@const trend = trendCache[pid]}
+                    {#if !trend || trend.direction === 'insufficient_data'}
+                      <span class="text-slate-600 text-xs font-bold">—</span>
+                    {:else if trend.direction === 'improving'}
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        ▼ Mejora
+                      </span>
+                    {:else if trend.direction === 'worsening'}
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                        ▲ Deterioro
+                      </span>
+                    {:else}
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        ● Estable
+                      </span>
+                    {/if}
+                  </td>
+
                   <td class="px-6 py-4 text-right">
                     {#if app.status === 'open'}
                       <button 
@@ -419,6 +466,82 @@
           Guardar Cierre
         </button>
       </div>
+    </div>
+  </div>
+{/if}
+
+<!-- PANEL DE RESULTADO: TENDENCIA DEL PACIENTE -->
+{#if showTrendResult && lastResult}
+  <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-900 border border-slate-800/80 p-8 rounded-2xl max-w-md w-full shadow-2xl text-slate-100">
+      
+      <!-- Encabezado con score -->
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h3 class="text-lg font-extrabold bg-gradient-to-r from-indigo-200 to-violet-400 bg-clip-text text-transparent">Sesión Cerrada</h3>
+          <p class="text-slate-400 text-xs mt-0.5">Análisis clínico completado</p>
+        </div>
+        <div class="text-right">
+          <p class="text-3xl font-black text-indigo-400">{lastResult.scoreObtained > 0 ? '+' : ''}{lastResult.scoreObtained}</p>
+          <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Puntos</p>
+        </div>
+      </div>
+
+      <!-- BLOQUE TENDENCIA -->
+      {#if lastResult.patientTrend}
+        {@const trend = lastResult.patientTrend}
+        <div class="rounded-xl border p-4 mb-5
+          {trend.direction === 'worsening'   ? 'bg-rose-950/40 border-rose-500/25' :
+           trend.direction === 'improving'   ? 'bg-emerald-950/40 border-emerald-500/25' :
+           trend.direction === 'stable'      ? 'bg-amber-950/40 border-amber-500/25' :
+                                              'bg-slate-900/60 border-slate-800/60'}"
+        >
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-lg">
+              {trend.direction === 'worsening'          ? '📈' :
+               trend.direction === 'improving'          ? '📉' :
+               trend.direction === 'stable'             ? '📊' : '🔍'}
+            </span>
+            <span class="text-xs font-bold uppercase tracking-wider
+              {trend.direction === 'worsening'   ? 'text-rose-400' :
+               trend.direction === 'improving'   ? 'text-emerald-400' :
+               trend.direction === 'stable'      ? 'text-amber-400' :
+                                                  'text-slate-400'}">
+              Tendencia del Paciente: 
+              {trend.direction === 'worsening'          ? 'Deterioro' :
+               trend.direction === 'improving'          ? 'Mejoría' :
+               trend.direction === 'stable'             ? 'Estable' : 'Sin datos suficientes'}
+            </span>
+          </div>
+
+          <div class="flex gap-4 text-xs text-slate-300 mb-2">
+            {#if trend.delta !== null}
+              <span>Δ Intensidad: <strong class="{trend.delta > 0 ? 'text-rose-400' : 'text-emerald-400'}">{trend.delta > 0 ? '+' : ''}{trend.delta}</strong></span>
+            {/if}
+            <span>Sesiones analizadas: <strong class="text-slate-200">{trend.sessionsAnalyzed}</strong></span>
+          </div>
+
+          {#if trend.clinicalAlert}
+            <p class="text-[11px] text-rose-300 font-semibold leading-relaxed mt-2 border-t border-rose-500/20 pt-2">
+              {trend.clinicalAlert}
+            </p>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Smart Buffer -->
+      {#if lastResult.smartBufferActive}
+        <div class="bg-amber-950/30 border border-amber-500/20 rounded-xl p-3 mb-5 text-xs text-amber-300 font-semibold">
+          ⚠️ {lastResult.alert}
+        </div>
+      {/if}
+
+      <button
+        onclick={() => { showTrendResult = false; lastResult = null; }}
+        class="w-full py-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all active:scale-95"
+      >
+        Entendido
+      </button>
     </div>
   </div>
 {/if}
