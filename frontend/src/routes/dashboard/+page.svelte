@@ -202,10 +202,42 @@
     }
   });
 
-  // Helper para evitar optional chaining en {@const} (incompatible con rolldown en build)
+  // Calcula la tendencia del paciente desde el historial ya cargado en memoria.
+  // El trendCache (de resolve reciente) tiene prioridad; si no existe, lo computa en vivo.
   function getPatientTrend(patientId: string | undefined): PatientTrend | null {
     if (!patientId) return null;
-    return trendCache[patientId] ?? null;
+
+    // Prioridad 1: cache de la sesión actual (resultado de resolve reciente)
+    if (trendCache[patientId]) return trendCache[patientId];
+
+    // Prioridad 2: calcular desde las citas ya cargadas en el dashboard
+    const history = appointments
+      .filter(a =>
+        a.patientId?._id === patientId &&
+        a.status === 'resolved' &&
+        a.realIntensity !== undefined
+      )
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5);
+
+    if (history.length < 2) {
+      return { direction: 'insufficient_data', delta: null, sessionsAnalyzed: history.length, clinicalAlert: null };
+    }
+
+    const mostRecent = history[0].realIntensity as number;
+    const oldest     = history[history.length - 1].realIntensity as number;
+    const delta      = mostRecent - oldest;
+
+    let direction: TrendDirection;
+    if      (delta <= -2) direction = 'improving';
+    else if (delta >= 2)  direction = 'worsening';
+    else                  direction = 'stable';
+
+    const clinicalAlert = delta >= 3
+      ? `⚠️ El paciente muestra deterioro significativo: intensidad subió ${delta} puntos en las últimas ${history.length} sesiones.`
+      : null;
+
+    return { direction, delta, sessionsAnalyzed: history.length, clinicalAlert };
   }
 
   async function handleLogout() {
