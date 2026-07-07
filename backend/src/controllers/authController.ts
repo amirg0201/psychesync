@@ -1,8 +1,11 @@
 import { Context } from 'hono';
 import { sign } from 'hono/jwt';
 import { User } from '../models/User';
-import { Appointment } from '../models/Appointment';
 import bcrypt from 'bcryptjs';
+import { BurnoutService } from '../services/BurnoutService'; // ← NEW
+
+// Instancia del servicio (podría inyectarse via DI container)
+const burnoutService = new BurnoutService();
 
 export const register = async (c: Context) => {
   try {
@@ -58,37 +61,10 @@ export const getPsychologists = async (c: Context) => {
     const users = await User.find({}, 'name email');
 
     const list = await Promise.all(users.map(async (user) => {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const todayStart = new Date(todayStr);
+      // ← ANTES: ~20 líneas de lógica de burnout aquí
+      // ← AHORA: 1 sola línea. El controlador no sabe CÓMO se calcula.
+      const burnoutLabel = await burnoutService.calculateBurnoutLabel(user._id);
 
-      const resolvedTodayCount = await Appointment.countDocuments({
-        psychologistId: user._id,
-        status: 'resolved',
-        date: { $gte: todayStart }
-      });
-
-      const lastSessions = await Appointment.find({
-        psychologistId: user._id,
-        status: 'resolved'
-      })
-        .sort({ date: -1 })
-        .limit(5)
-        .select('realIntensity');
-
-      const criticalCount = lastSessions.filter(app => (app.realIntensity ?? 0) >= 8).length;
-      const totalIntensity = lastSessions.reduce((sum, app) => sum + (app.realIntensity ?? 0), 0);
-      const avgIntensity = lastSessions.length > 0 ? totalIntensity / lastSessions.length : 0;
-
-      let burnoutLabel = 'Sin Datos ⚪';
-      if (lastSessions.length > 0) {
-        if (resolvedTodayCount >= 8 || criticalCount >= 2) {
-          burnoutLabel = 'Riesgo Crítico 🔴';
-        } else if (resolvedTodayCount >= 6 || criticalCount === 1 || avgIntensity >= 5.5) {
-          burnoutLabel = 'Carga Elevada 🟡';
-        } else {
-          burnoutLabel = 'Nivel Óptimo 🟢';
-        }
-      }
       return {
         name: user.name,
         email: user.email,
@@ -101,4 +77,3 @@ export const getPsychologists = async (c: Context) => {
     return c.json({ error: "Error al obtener psicólogos", details: error.message }, 500);
   }
 };
-
